@@ -1,0 +1,17 @@
+{
+  "name": "game-node-js",
+  "version": "0.0.1",
+  "description": "My App",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "author": {
+    "name": "evgeni",
+    "email": ""
+  },
+  "dependencies": {
+    "express": "^4.16.3",
+    "socket.io": "^2.1.0"
+  }
+}

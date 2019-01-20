@@ -1,0 +1,492 @@
+﻿<html>
+
+<!-- head -->
+<head>
+    <title>My example</title>
+   <meta name='viewport' content='width=930, user-scalable=no' />
+</head>
+
+<!-- body -->
+<body>
+
+	<!-- include my library --> 
+	<script src="lib/user_util1.js"></script>
+
+	<!-- include socket --> 
+	<script src="https://game-node-js.herokuapp.com/socket.io/socket.io.js"></script> 
+	
+	<!-- include jQuery --> 
+	<script src="jquery/jquery-3.3.1.min.js"></script>
+	
+	<!-- html elements -->
+	<div>
+
+		<div style='display:inline-block; vertical-align:top;'>
+			<!-- canvas -->
+			<canvas id='my_canvas_elem' style='border:3px solid #d3d1d2; display:inline-block;' width='700px' height='460px' border='1'>
+			</canvas>
+
+			<!-- info -->
+			<div>
+				Users online: <span id='user_count_elem'></span>
+				&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+				Your opponent: <span id='oponent_elem'></span>
+				&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+				<span id='info_elem'></span>
+				<!-- link: <a href='https://game-node-js.herokuapp.com' target='_blank'>game on heroku</a> -->
+			</div>
+		</div>
+
+		<!-- count -->
+		<div style='display:inline-block; vertical-align:top;'>
+
+			Your name: 
+
+			<BR>
+
+			<span id='user_name_elem'></span>
+
+			<BR>
+
+			<img id='my_picture_elem'>
+			
+			<BR>
+
+			<input type='button' value="+zoom" onclick='addZoomForCanvas();' />
+			<input type='button' value="origin" onclick='originZoomForCanvas();' />
+			<input type='button' value="-zoom" onclick='minusZoomForCanvas();' />
+
+			<!-- controls -->
+			<div vertical-align:top; >
+				<input type='button' id='button_left' style='margin-top:70px; display:inline-block; vertical-align:top;'/>
+	        
+				<div style='display:inline-block; vertical-align:top; width:62px;'>
+					<input type='button' id='button_up' style='display:inline-block; vertical-align:top;'/>
+					<input type='button' id='button_down' style='margin-top:80px; display:inline-block; vertical-align:top;'/>
+				</div>
+			
+				<input type='button' id='button_right' style='margin-top:70px; display:inline-block; vertical-align:top;'/>
+	
+				<div style='padding-top:20px'>
+					<input type='button' id='button_fire'/>
+				</div>	        
+			</div>
+
+		</div>
+
+	</div>
+
+	<!-- script -->
+	<script>
+		//alert('paged loading!!!'); ///////!!!!!!
+
+		// create socket
+		var socket = io(); 
+
+		// settings
+		var timerInterval = 100 /*0.1 second*/;
+		var stepMoveHero = 8;
+		var stepMoveFire = 24;
+		var imgHero_forPlayer1 = loadImageFromFile("images/tank1.png", null /*when loaded*/);
+		var imgHero_forPlayer2 = loadImageFromFile("images/tank2.png", null /*when loaded*/);
+		var canvas_width = 700;
+		var canvas_height = 460;
+		
+		// zoom
+		var zoomWidthCanvas = 100; // px
+		cur_canvas_width = canvas_width;
+		
+		// start pos
+		var start_hero_x_offset = canvas_width / 6;
+		var start_hero_y_offset = canvas_height / 4;
+
+		// create local ID
+		myUniqHTMLPageID = createMyUniqID(socket);
+		//alert(myUniqHTMLPageID); /////!!!!!!!!!
+
+		// send message to server
+		socket.emit("HTML Page loaded", myUniqHTMLPageID); 
+
+		// my init
+		var canvas = document.getElementById('my_canvas_elem'); 
+		var context = canvas.getContext('2d'); 
+
+		// my hero
+		var myHero = {
+						'isPlayer1'			: true,
+						'moveButtonPressed' : '' ,
+						'xPosHero' 			: 0 ,
+						'yPosHero' 			: 0 ,
+						'angleHero'			: 0	 ,
+						'imgHero'			: null,
+						'imgFire'			: loadImageFromFile("images/fire.png", null /*when loaded*/),
+						'fires'  			: []
+		};
+
+		// enemy hero
+		var enemyHero = {
+						'isConnected'		: false,
+						'isPlayer1'			: false,
+						'moveButtonPressed' : '' ,
+						'xPosHero' 			: 0 ,
+						'yPosHero' 			: 0 ,
+						'angleHero'			: 0	 ,
+						'imgHero'			: null,
+						'imgFire'			: loadImageFromFile("images/fire.png", null /*when loaded*/),
+						'fires'  			: []
+		};
+
+		socket.on('get HTML page ID', function (msg) {
+
+			//alert('soc con id=' + msg +', html page id='+myUniqHTMLPageID) + ', x=' + myHero.xPosHero + ' y=' + myHero.yPosHero;
+			// send message to server
+			socket.emit("HTML Page ID", myUniqHTMLPageID); 
+		});
+		
+		socket.on('play Game', function (msg) {
+		
+			// set span
+			$("#user_name_elem").html(msg.userName);
+
+		//	alert('play single and wait Enemy!!! ' + msg.xPosHero + ',' + msg.yPosHero + " " + msg.playWithUserXPosHero + ',' + msg.playWithUserYPosHero); ///////!!!!!!
+
+			// set x,y for myHero 
+			myHero.isPlayer1 = msg.isPlayer1;
+			myHero.imgHero = myHero.isPlayer1 ? imgHero_forPlayer1 : imgHero_forPlayer2;
+			InitPosition(myHero);
+
+			// set my picture
+			$("#my_picture_elem").attr("src", myHero.imgHero.src);
+
+			// set enemy name
+			$("#oponent_elem").html("");
+
+			// set x,y for enemyHero 
+			enemyHero.isConnected = msg.isPlayWithUser;
+			if (enemyHero.isConnected)
+			{
+				enemyHero.isPlayer1 = !msg.isPlayer1;
+				enemyHero.imgHero = enemyHero.isPlayer1 ? imgHero_forPlayer1 : imgHero_forPlayer2;
+				InitPosition(enemyHero);
+
+				// set enemy name
+				$("#oponent_elem").html(msg.playWithUserName);
+			}
+
+			// draw
+			drawLevelOnCanvas();
+		});
+
+		socket.on('Enemy was disconnected', function (msg) {
+		
+		//	alert('enemy was disconnected ' + msg);/////!!!!!!
+
+			// clear enemy
+			enemyHero = {};
+			enemyHero.fires = [];
+			enemyHero.isConnected = false;
+
+			// set span
+			$("#oponent_elem").html("");
+
+			// draw
+			drawLevelOnCanvas();
+		});
+
+		socket.on('Online users count', function (msg) {
+			// set span
+			$("#user_count_elem").html(msg);
+		});
+
+		socket.on('Enemy hero moving start', function (msg) {
+
+			enemyHero.moveButtonPressed = msg.movingType;
+
+			// set x,y for enemyHero 
+			enemyHero.xPosHero = msg.xPosHero;
+			enemyHero.yPosHero = msg.yPosHero;
+			enemyHero.angleHero = msg.angleHero;
+
+			// draw
+			drawLevelOnCanvas();
+		});
+
+		socket.on('Enemy hero moving end', function (msg) {
+
+			enemyHero.moveButtonPressed = "";
+
+			// set x,y for enemyHero 
+			enemyHero.xPosHero = msg.xPosHero;
+			enemyHero.yPosHero = msg.yPosHero;
+			enemyHero.angleHero = msg.angleHero;
+
+			// draw
+			drawLevelOnCanvas();
+		});
+
+		socket.on('Enemy created fire', function (msg) {
+			// add fire
+			enemyHero.fires.push({
+				'xPosFire'	: msg.xPosFire,
+				'yPosFire'	: msg.yPosFire,
+				'angleFire'	: msg.angleFire
+			});
+
+			// draw
+			drawLevelOnCanvas();
+		});
+
+		// when page loaded
+		$(document).ready(function()
+		{
+			// move
+			add_game_button("button_down", 	"down", 	"Down");
+			add_game_button("button_up", 	"up", 		"Up");
+			add_game_button("button_right",  "right", 	"Right");
+			add_game_button("button_left", 	"left", 	"Left");
+
+			// fire
+			add_game_button("button_fire", 	"fire", 	"FIRE");
+
+			// set timer
+			window.setInterval(MyTimer, timerInterval);
+		});
+
+		function add_game_button(elem_id, type, title)
+		{
+			if (type=='left' || type=='right' || type=='up' || type=='down')
+			{
+				$('#'+elem_id).val(title);
+				$('#'+elem_id).css('width', 				'60px');
+				$('#'+elem_id).css('height', 				'60px');
+				$('#'+elem_id).css('background-color', 		'green');
+				$('#'+elem_id).on('touchstart mousedown', 	function() { buttonPressed(type); });
+				$('#'+elem_id).on('touchend mouseup', 	  	function() { buttonUnpressed(); });
+			}
+			else if (type=='fire')
+			{
+				$('#'+elem_id).val(title);
+				$('#'+elem_id).css('background-color',  'gold');
+				$('#'+elem_id).css('width',  			'190px');
+				$('#'+elem_id).css('height', 			'40px');
+				$('#'+elem_id).on('click', 				function() { fireHero(); });
+			}
+		}
+
+		// timer 
+		function MyTimer() 
+		{
+			var bNeedDraw = false;
+
+			// myHero button pressed
+			if (myHero.moveButtonPressed!="")
+			{
+				moveHero(myHero, myHero.moveButtonPressed);
+				bNeedDraw = true;
+			}
+
+			// enemyHero button pressed
+			if (enemyHero.moveButtonPressed!="")
+			{
+				moveHero(enemyHero, enemyHero.moveButtonPressed);
+				bNeedDraw = true;
+			}
+
+			// move Hero fire
+			for (var i=(myHero.fires.length-1); i>=0; i--)
+			{
+				// remove 
+				if (myHero.fires[i].xPosFire<0 || myHero.fires[i].xPosFire>=canvas_width || myHero.fires[i].yPosFire<0 || myHero.fires[i].yPosFire>=canvas_height)
+				{
+					myHero.fires.splice(i, 1); // delete
+					bNeedDraw = true;
+					continue;
+				}
+
+				// move
+				if (myHero.fires[i].angleFire==180)
+					myHero.fires[i].xPosFire -= stepMoveFire; // move left
+
+				else if (myHero.fires[i].angleFire==0)
+					myHero.fires[i].xPosFire += stepMoveFire; // move right
+
+				else if (myHero.fires[i].angleFire==270)
+					myHero.fires[i].yPosFire -= stepMoveFire; // move up
+
+				else if (myHero.fires[i].angleFire==90)
+					myHero.fires[i].yPosFire += stepMoveFire; // move down
+			}
+
+			// move Enemy fire
+			for (var i=(enemyHero.fires.length-1); enemyHero.isConnected && i>=0; i--)
+			{
+				// remove 
+				if (enemyHero.fires[i].xPosFire<0 || enemyHero.fires[i].xPosFire>=canvas_width || enemyHero.fires[i].yPosFire<0 || enemyHero.fires[i].yPosFire>=canvas_height)
+				{
+					enemyHero.fires.splice(i, 1); // delete
+					bNeedDraw = true;
+					continue;
+				}
+
+				// is intersect with my Hero
+				if (isIntersectRects(	enemyHero.fires[i].xPosFire - enemyHero.imgFire.width/2,
+										enemyHero.fires[i].yPosFire - enemyHero.imgFire.height/2,
+										enemyHero.imgFire.width,
+										enemyHero.imgFire.height,
+
+										myHero.xPosHero - myHero.imgHero.width/2,
+										myHero.yPosHero - myHero.imgHero.height/2,
+										myHero.imgHero.width,
+										myHero.imgHero.height
+								))
+				{
+					//	send message
+					socket.emit("Hero was damaged", ''); 
+
+					// delete fire
+					enemyHero.fires.splice(i, 1); // delete
+					bNeedDraw = true;
+					continue;
+				}
+
+				// move
+				if (enemyHero.fires[i].angleFire==180)
+					enemyHero.fires[i].xPosFire -= stepMoveFire; // move left
+
+				else if (enemyHero.fires[i].angleFire==0)
+					enemyHero.fires[i].xPosFire += stepMoveFire; // move right
+
+				else if (enemyHero.fires[i].angleFire==270)
+					enemyHero.fires[i].yPosFire -= stepMoveFire; // move up
+
+				else if (enemyHero.fires[i].angleFire==90)
+					enemyHero.fires[i].yPosFire += stepMoveFire; // move down
+			}
+
+			// redraw level
+			if (myHero.fires.length>0 || (enemyHero.fires.length>0 && enemyHero.isConnected) || bNeedDraw)
+				drawLevelOnCanvas();
+		}
+
+		function InitPosition(player) 
+		{ 
+			// init position
+			if (player.isPlayer1)
+			{
+				player.xPosHero = start_hero_x_offset;
+				player.yPosHero = start_hero_y_offset;
+				player.angleHero = 0;
+			}
+			else
+			{
+				player.xPosHero = canvas_width - start_hero_x_offset;
+				player.yPosHero = canvas_height - start_hero_y_offset;
+				player.angleHero = 180;
+			}
+		}
+
+		function drawLevelOnCanvas() 
+		{ 
+			// рисуем прямоугольник белым цветом 
+			context.fillStyle = 'white'; 
+			context.rect(0, 0, canvas.width, canvas.height); 
+			context.fill(); 
+
+			// draw Hero fire
+			for (var i=0; i<myHero.fires.length; i++)
+				drawRotateImage(context, myHero.imgFire, myHero.fires[i].xPosFire-myHero.imgFire.width/2, myHero.fires[i].yPosFire-myHero.imgFire.height/2, myHero.fires[i].angleFire);
+
+			// draw Enemy fire
+			for (var i=0; enemyHero.isConnected && i<enemyHero.fires.length; i++)
+				drawRotateImage(context, enemyHero.imgFire, enemyHero.fires[i].xPosFire-enemyHero.imgFire.width/2, enemyHero.fires[i].yPosFire-enemyHero.imgFire.height/2, enemyHero.fires[i].angleFire);
+
+			// draw myHero
+			if (myHero.imgHero)
+				drawRotateImage(context, myHero.imgHero, myHero.xPosHero-myHero.imgHero.width/2, myHero.yPosHero-myHero.imgHero.height/2, myHero.angleHero);
+
+			// draw enemyHero
+			if (enemyHero.isConnected && enemyHero.imgHero)
+				drawRotateImage(context, enemyHero.imgHero, enemyHero.xPosHero-enemyHero.imgHero.width/2, enemyHero.yPosHero-enemyHero.imgHero.height/2, enemyHero.angleHero);
+
+			// show info
+			var count = myHero.fires.length + enemyHero.fires.length;
+			$("#info_elem").html('Fires count=' + count);
+		}
+
+		function fireHero() 
+		{
+			// add fire
+			myHero.fires.push({
+				'xPosFire'	: myHero.xPosHero,
+				'yPosFire'	: myHero.yPosHero,
+				'angleFire'	: myHero.angleHero
+			});
+
+			// send message to server
+			socket.emit("created fire", { 'xPosFire':myHero.xPosHero, 'yPosFire':myHero.yPosHero, 'angleFire':myHero.angleHero }); 
+		}
+
+		function buttonPressed(type)
+		{
+			myHero.moveButtonPressed = type;
+
+			// send message to server
+			myHero.angleHero = getAngle(type);
+			socket.emit("Hero moving start", { 'xPosHero':myHero.xPosHero, 'yPosHero':myHero.yPosHero, 'angleHero':myHero.angleHero, 'movingType':type }); 
+		}
+
+		function buttonUnpressed(type)
+		{
+			myHero.moveButtonPressed = "";
+
+			// send message to server
+			socket.emit("Hero moving end", { 'xPosHero':myHero.xPosHero, 'yPosHero':myHero.yPosHero, 'angleHero':myHero.angleHero }); 
+
+			// draw
+			drawLevelOnCanvas();
+		}
+
+		function moveHero(hero, type) 
+		{
+			// change angle
+			hero.angleHero = getAngle(type);
+
+			// change position
+			if (type=='left')
+				hero.xPosHero -= stepMoveHero;
+
+			else if (type=='right')
+				hero.xPosHero += stepMoveHero;
+ 
+			else if (type=='up')
+				hero.yPosHero -= stepMoveHero;
+
+			else if (type=='down')
+				hero.yPosHero += stepMoveHero;
+		}
+
+		// zoom canvas		
+		function originZoomForCanvas()
+		{
+			cur_canvas_width = canvas_width;
+			// set enemy name
+			$("#my_canvas_elem").css("width", cur_canvas_width + 'px');
+		}
+
+		function addZoomForCanvas()
+		{
+			cur_canvas_width += zoomWidthCanvas;
+			// set enemy name
+			$("#my_canvas_elem").css("width", cur_canvas_width + 'px');
+		}
+
+		function minusZoomForCanvas()
+		{
+			cur_canvas_width -= zoomWidthCanvas;
+			// set enemy name
+			$("#my_canvas_elem").css("width", cur_canvas_width + 'px');
+		}
+	</script>
+
+</body>
+</html>
